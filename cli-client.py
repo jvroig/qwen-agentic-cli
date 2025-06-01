@@ -96,7 +96,7 @@ def format_tool_result(result):
         return Panel(f"Error formatting tool result: {str(e)}\n\nOriginal result: {result}", 
                    title="Tool Result (Error)", border_style="red", box=box.ROUNDED)
 
-def process_streaming_response(url, messages, temperature=0.4, max_tokens=2000):
+def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
     """Process streaming response from the API"""
     global stop_streaming
     stop_streaming = False
@@ -280,6 +280,25 @@ def print_help():
     """
     console.print(Panel(help_text, title="Help", border_style="blue"))
 
+
+def print_ascii_banner():
+    """Print ASCII art banner for Qwen"""
+    banner = """
+ ██████  ██     ██ ███████ ███    ██ 
+██    ██ ██     ██ ██      ████   ██ 
+██    ██ ██  █  ██ █████   ██ ██  ██ 
+██ ▄▄ ██ ██ ███ ██ ██      ██  ██ ██ 
+ ██████   ███ ███  ███████ ██   ████ 
+    ▀▀                              
+
+ █████   ██████  ███████ ███    ██ ████████ ██  ██████ 
+██   ██ ██       ██      ████   ██    ██    ██ ██      
+███████ ██   ███ █████   ██ ██  ██    ██    ██ ██      
+██   ██ ██    ██ ██      ██  ██ ██    ██    ██ ██      
+██   ██  ██████  ███████ ██   ████    ██    ██  ██████ 
+"""
+    console.print(banner, style="violet")
+
 def main():
     """Main function to run the CLI client"""
     parser = argparse.ArgumentParser(description="Qwen Agentic CLI Client")
@@ -299,17 +318,43 @@ def main():
     url = args.url
     temperature = args.temp
     max_tokens = args.tokens
-    
-    # Print welcome message
+
+    # Clear screen using rich
+    console.clear()
+
+    # Print ASCII banner
+    print_ascii_banner()
+
+    # Print welcome message with help information
+    welcome_text = f"""[bold blue]Qwen Agentic CLI Client[/bold blue]
+
+[green]Configuration:[/green]
+- API Endpoint: {url}
+- Temperature: {temperature}
+- Max Tokens: {max_tokens}
+
+[bold yellow]Commands:[/bold yellow]
+- [bold]/help[/bold]           - Show detailed help
+- [bold]/quit[/bold] or [bold]/exit[/bold]  - Exit the program
+- [bold]/save \[file][/bold]    - Save conversation
+- [bold]/load \[file][/bold]    - Load conversation
+- [bold]/history[/bold]        - Show conversation history
+- [bold]/clear[/bold]          - Clear conversation history
+- [bold]/temp \[value][/bold]   - Set temperature (0.0-1.0)
+- [bold]/tokens \[value][/bold] - Set max tokens
+- [bold]/debug[/bold]          - Debug conversation history
+
+[bold yellow]Hotkeys:[/bold yellow]
+- [bold]Ctrl+C[/bold] - Stop current response generation
+
+[dim]Ready to chat! Type your message or use commands above.[/dim]"""
+
     console.print(Panel(
-        "[bold blue]Qwen Chat CLI Client[/bold blue]\n"
-        f"[green]API Endpoint:[/green] {url}\n"
-        f"[green]Temperature:[/green] {temperature}\n"
-        f"[green]Max Tokens:[/green] {max_tokens}\n\n"
-        "Type [bold]/help[/bold] for available commands. Use [bold]Ctrl+q[/bold] to stop generation.",
-        title="Welcome", border_style="green"
+        welcome_text,
+        title="Welcome", 
+        border_style="green",
+        expand=False
     ))
-    
     # Load conversation if specified
     if args.load:
         load_conversation(args.load)
