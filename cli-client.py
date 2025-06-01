@@ -282,7 +282,7 @@ def print_help():
 
 def main():
     """Main function to run the CLI client"""
-    parser = argparse.ArgumentParser(description="Qwen Chat CLI Client")
+    parser = argparse.ArgumentParser(description="Qwen Agentic CLI Client")
     parser.add_argument("--url", default="http://localhost:5001/api/chat",
                       help="API endpoint URL (default: http://localhost:5001/api/chat)")
     parser.add_argument("--temp", type=float, default=0.7,

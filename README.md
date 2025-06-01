@@ -2,6 +2,10 @@
 
 A powerful command-line interface for interacting with Qwen chatbot APIs. This CLI client provides a rich, interactive terminal experience with streaming responses, conversation management, and beautiful formatting.
 
+You will need an LLM agentic inference service to use this. The recommended service can be found in this repo: [Qwen-Max-Agentic](https://github.com/jvroig/qwen-max-agentic). Aside from the agentic inference service, the Qwen-Max-Agentic repo also provides a browser-based GUI client.
+
+Run the Qwen-Max-Agentic service first before starting this CLI client.
+
 ## Features
 
 - 🚀 **Streaming Responses** - Real-time response display as the AI generates text
