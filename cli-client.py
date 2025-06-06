@@ -11,8 +11,10 @@ from rich.markdown import Markdown
 from rich.syntax import Syntax
 from rich.panel import Panel
 from rich.prompt import Prompt
+from rich.padding import Padding
 from rich.live import Live
 from rich.text import Text
+from rich.status import Status
 from rich import box
 
 # Global variables
@@ -108,17 +110,20 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
     }
     
     try:
-        # Set up streaming request
-        response = requests.post(url, json=payload, stream=True, headers={'Accept': 'text/event-stream'})
-        
         assistant_message = ""
         full_response = []
         
         # Show a message while waiting for the first response
-        console.print("[dim]Waiting for response...[/dim]")
-        
+        # console.print(Padding("[dim]Waiting for response...[/dim]",(0, 0, 0, 4)))
+
+        with Status(Padding("[dim]Waiting for response...[/dim]", (0, 0, 0, 4)), console=console):
+            # Set up streaming request inside the status context
+            response = requests.post(url, json=payload, stream=True, headers={'Accept': 'text/event-stream'})
+
+        console.print("")
+
         # Create Live display context for updating in real-time
-        with Live("", refresh_per_second=10, console=console) as live:
+        with Live(Padding("", (0, 0, 0, 4)), refresh_per_second=10, console=console) as live:
             # Debug info for troubleshooting
             debug_mode = False  # Set to True to see raw response chunks
             
@@ -131,7 +136,7 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
                 
                 # Debug raw chunks if needed
                 if debug_mode:
-                    live.update(f"[dim]DEBUG: {chunk}[/dim]")
+                    live.update(Padding(f"[dim]DEBUG: {chunk}[/dim]", (0, 0, 0, 4)))
                     continue
                 
                 # Process the chunk directly as JSON (no data: prefix in this API)
@@ -146,25 +151,28 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
                             assistant_message += content
                             # Format the growing message with markdown
                             md = Markdown(assistant_message)
-                            live.update(md)
+                            live.update(Padding(md, (0, 0, 0, 4)))
                         
                         elif msg_type == 'done':
                             # Completed message
                             if assistant_message:  # Only add if we got content
+                                final_content = Markdown(assistant_message + "\n")
+                                    
+                                live.update(Padding(final_content, (0, 0, 0, 4)))
                                 full_response.append({"role": "assistant", "content": assistant_message})
                                 conversation_history.append({"role": "assistant", "content": assistant_message})
                             
                     elif role == 'tool_call':
                         # Tool call result
                         formatted_result = format_tool_result(content)
-                        live.update(formatted_result)
+                        live.update(Padding(formatted_result, (0, 0, 0, 4)))
                         full_response.append({"role": "tool", "content": content})
                         conversation_history.append({"role": "user", "content": content})
                 
                 except json.JSONDecodeError as e:
                     # If we can't parse as JSON, let's just show the raw data
                     if chunk and len(chunk) > 0:  # Only display non-empty chunks
-                        live.update(f"[red]Error parsing JSON: {e}[/red]\n[dim]Raw data: {chunk}[/dim]")
+                        live.update(Padding(f"[red]Error parsing JSON: {e}[/red]\n[dim]Raw data: {chunk}[/dim]", (0, 0, 0, 4)))
         
 
         
@@ -422,10 +430,13 @@ def main():
             conversation_history.append({"role": "user", "content": user_input})
             
             # Display user message in a panel
+            console.print("")
             console.print(Panel(user_input, title="User", border_style="green", box=box.ROUNDED))
+            console.print("")
             
             # Process the response
-            console.print("[bold blue]Assistant:[/bold blue]")
+            console.print("")
+            console.print("[bold yellow on black]Assistant:[/bold yellow on black]")
             process_streaming_response(url, conversation_history, temperature, max_tokens)
             
         except KeyboardInterrupt:
