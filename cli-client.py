@@ -179,8 +179,7 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
                     elif role == 'tool_call':
                         # Tool call result
                         formatted_result = format_tool_result(content)
-                        assistant_message += formatted_result + "\n\n"
-                        live.update(Padding(assistant_message, (0, 0, 0, 4)))
+                        live.update(Padding(formatted_result, (0, 0, 0, 4)))
                         full_response.append({"role": "tool", "content": content})
                         conversation_history.append({"role": "user", "content": content})
                 
