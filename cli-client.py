@@ -21,6 +21,7 @@ from rich import box
 stop_streaming = False
 console = Console()
 conversation_history = []
+max_result_len = 300 #Limits formatted display length only, not actual content stored in context
 
 #FIXME: DELETE ME
 # def signal_handler(sig, frame):
@@ -62,45 +63,37 @@ def format_code_blocks(text):
     return parts
 
 def format_tool_result(result):
-    """Format tool call results"""
+    """Format tool call results using markdown"""
+
     try:
-        # Check if the result contains JSON
-        if "```" in result and (result.count("```") >= 2):
-            # Extract the code block content
-            start = result.find("```") + 3
-            end = result.rfind("```")
-            
-            # Find the end of the first line (language specifier)
-            first_line_end = result.find("\n", start)
-            if first_line_end > start and first_line_end < end:
-                language = result[start:first_line_end].strip()
-                content = result[first_line_end+1:end].strip()
-            else:
-                language = "json"
-                content = result[start:end].strip()
-                
-            try:
-                # Try to parse as JSON for pretty formatting
-                parsed = json.loads(content)
-                syntax = Syntax(json.dumps(parsed, indent=2), "json", theme="monokai", line_numbers=True)
-                #return Panel(syntax, title="Tool Result", border_style="yellow", box=box.ROUNDED)
-            except json.JSONDecodeError:
-                # If not valid JSON, just format with the detected language
-                syntax = Syntax(content, language, theme="monokai", line_numbers=True)
-                #return Panel(syntax, title="Tool Result", border_style="yellow", box=box.ROUNDED)
-
-            return syntax
-
-        # If no code block markers, treat as plain text
+        # Clean up the result
         if result.startswith("Tool result: "):
             result = result[len("Tool result: "):]
-        #return Panel(result, title="Tool Result", border_style="yellow", box=box.ROUNDED)
-        return result
+        
+        if len(result) >= 200:
+            result = result[:180] + "... ```"
 
+        # If it looks like structured data, format it nicely
+        if "```" in result:
+            # It already has markdown code blocks, just return as markdown
+            return Markdown(result)
+        
+        # For plain text results, add some light markdown formatting
+        # You could add logic here to detect different types of content
+        if result.strip().startswith('{') and result.strip().endswith('}'):
+            # Looks like JSON, wrap in a code block
+            try:
+                parsed = json.loads(result)
+                formatted = json.dumps(parsed, indent=2)
+                return Markdown(f"```json\n{formatted}\n```")
+            except json.JSONDecodeError:
+                pass
+
+        # For regular messages, just return as markdown (handles basic formatting)
+        return Markdown(result)
+        
     except Exception as e:
-        #return Panel(f"Error formatting tool result: {str(e)}\n\nOriginal result: {result}", 
-        #           title="Tool Result (Error)", border_style="red", box=box.ROUNDED)
-        return "Error formatting tool result: {str(e)}\n\nOriginal result: {result}"
+        return Markdown(f"**Error formatting tool result:** {str(e)}\n\n```\n{result}\n```")
     
 
 def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
@@ -117,6 +110,8 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
     try:
         assistant_message = ""
         full_response = []
+        current_role = ""
+        current_live = None
         
         # Show a message while waiting for the first response
         # console.print(Padding("[dim]Waiting for response...[/dim]",(0, 0, 0, 4)))
@@ -126,13 +121,54 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
             response = requests.post(url, json=payload, stream=True, headers={'Accept': 'text/event-stream'})
 
         console.print("")
+    
+        def start_assistant_live():
+            """Start a new Live component for assistant responses"""
+            live = Live(
+                Padding(Markdown(""), (0, 0, 0, 4)), 
+                refresh_per_second=10, 
+                console=console
+            )
+            live.start()
+            return live
+        
+        def start_tool_live():
+            """Start a new Live component for tool responses"""
+            live = Live(
+                Padding("", (0, 0, 0, 4)), 
+                refresh_per_second=10, 
+                console=console
+            )
+            live.start()
+            return live
+        
+        def finalize_assistant_live(live, message):
+            """Finalize assistant Live with a Panel"""
+            if message:
+                final_content = Markdown(message)
+                final_panel = Panel(
+                    final_content, 
+                    title="Assistant", 
+                    border_style="violet", 
+                    box=box.ROUNDED
+                )
+                live.update(Padding(final_panel, (0, 4, 0, 4)))
+            live.stop()
+        
+        def finalize_tool_live(live, content):
+            """Finalize tool Live with a Panel"""
+            formatted_result = format_tool_result(content)
+            final_panel = Panel(
+                formatted_result, 
+                title="Tool Result", 
+                border_style="cyan",
+                box=box.ROUNDED
+            )
+            live.update(Padding(final_panel, (0, 4, 0, 4)))
+            live.stop()
 
-        # Create Live display context for updating in real-time
-        with Live(Padding("", (0, 0, 0, 4)), refresh_per_second=10, console=console) as live:
-            # Debug info for troubleshooting
-            debug_mode = False  # Set to True to see raw response chunks
 
-            current_role = ""            
+        try:
             for chunk in response.iter_lines(decode_unicode=True):
                 if stop_streaming:
                     break
@@ -140,53 +176,63 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
                 if not chunk:
                     continue
                 
-                # Debug raw chunks if needed
-                if debug_mode:
-                    live.update(Padding(f"[dim]DEBUG: {chunk}[/dim]", (0, 0, 0, 4)))
-                    continue
-                
-                # Process the chunk directly as JSON (no data: prefix in this API)
                 try:
                     data = json.loads(chunk)
                     role = data.get('role', '')
                     content = data.get('content', '')
                     msg_type = data.get('type', '')
 
-                    # Detect role switch from assistant to tool_call
-                    if current_role == 'assistant' and role == 'tool_call':
-                        assistant_message += "\n\n"  # Add newline when switching away from assistant
-                    
-                    # Update current role
-                    current_role = role
+                    # Handle role transitions
+                    if current_role != role:
+                        # Finish previous Live component
+                        if current_live:
+                            if current_role == 'assistant':
+                                finalize_assistant_live(current_live, assistant_message)
+                            elif current_role == 'tool_call':
+                                # Tool content should already be handled
+                                current_live.stop()
+                        
+                        # Start new Live component
+                        if role == 'assistant':
+                            current_live = start_assistant_live()
+                            assistant_message = ""  # Reset for new assistant message
+                        elif role == 'tool_call':
+                            current_live = start_tool_live()
+                        
+                        current_role = role
 
+                    # Handle content based on role
                     if role == 'assistant':
                         if msg_type == 'chunk':
                             assistant_message += content
-                            # Format the growing message with markdown
+                            # Update the live assistant display
                             md = Markdown(assistant_message)
-                            live.update(Padding(md, (0, 0, 0, 4)))
+                            current_live.update(Padding(md, (0, 0, 0, 4)))
                         
                         elif msg_type == 'done':
-                            # Completed message
-                            if assistant_message:  # Only add if we got content
-                                final_content = Markdown(assistant_message + "\n")
-                                    
-                                # live.update(Panel(Padding(final_content, (0, 0, 0, 4)), title="Agent", border_style="violet", box=box.ROUNDED))
-                                live.update(Padding(Panel(final_content, title="Agent", border_style="violet", box=box.ROUNDED), (0, 4, 0, 4)))
-                                full_response.append({"role": "assistant", "content": assistant_message})
-                                conversation_history.append({"role": "assistant", "content": assistant_message})
+                            # This will be handled by role transition or final cleanup
+                            pass
                             
                     elif role == 'tool_call':
-                        # Tool call result
-                        formatted_result = format_tool_result(content)
-                        live.update(Padding(formatted_result, (0, 0, 0, 4)))
+                        # Handle tool call immediately and finalize
+                        finalize_tool_live(current_live, content)
+                        current_live = None  # Will be reset on next role transition
+                        
+                        # Store in conversation history
                         full_response.append({"role": "tool", "content": content})
                         conversation_history.append({"role": "user", "content": content})
-                
+
                 except json.JSONDecodeError as e:
-                    # If we can't parse as JSON, let's just show the raw data
-                    if chunk and len(chunk) > 0:  # Only display non-empty chunks
-                        live.update(Padding(f"[red]Error parsing JSON: {e}[/red]\n[dim]Raw data: {chunk}[/dim]", (0, 0, 0, 4)))
+                    if chunk and len(chunk) > 0:
+                        console.print(f"[red]Error parsing JSON: {e}[/red]\n[dim]Raw data: {chunk}[/dim]")
+
+        finally:
+            # Clean up any remaining Live component
+            if current_live:
+                if current_role == 'assistant':
+                    finalize_assistant_live(current_live, assistant_message)
+                else:
+                    current_live.stop()
         
 
         
