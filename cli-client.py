@@ -83,20 +83,25 @@ def format_tool_result(result):
                 # Try to parse as JSON for pretty formatting
                 parsed = json.loads(content)
                 syntax = Syntax(json.dumps(parsed, indent=2), "json", theme="monokai", line_numbers=True)
-                return Panel(syntax, title="Tool Result", border_style="yellow", box=box.ROUNDED)
+                #return Panel(syntax, title="Tool Result", border_style="yellow", box=box.ROUNDED)
             except json.JSONDecodeError:
                 # If not valid JSON, just format with the detected language
                 syntax = Syntax(content, language, theme="monokai", line_numbers=True)
-                return Panel(syntax, title="Tool Result", border_style="yellow", box=box.ROUNDED)
-        
+                #return Panel(syntax, title="Tool Result", border_style="yellow", box=box.ROUNDED)
+
+            return syntax
+
         # If no code block markers, treat as plain text
         if result.startswith("Tool result: "):
             result = result[len("Tool result: "):]
-        return Panel(result, title="Tool Result", border_style="yellow", box=box.ROUNDED)
-        
+        #return Panel(result, title="Tool Result", border_style="yellow", box=box.ROUNDED)
+        return result
+
     except Exception as e:
-        return Panel(f"Error formatting tool result: {str(e)}\n\nOriginal result: {result}", 
-                   title="Tool Result (Error)", border_style="red", box=box.ROUNDED)
+        #return Panel(f"Error formatting tool result: {str(e)}\n\nOriginal result: {result}", 
+        #           title="Tool Result (Error)", border_style="red", box=box.ROUNDED)
+        return "Error formatting tool result: {str(e)}\n\nOriginal result: {result}"
+    
 
 def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
     """Process streaming response from the API"""
@@ -126,7 +131,8 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
         with Live(Padding("", (0, 0, 0, 4)), refresh_per_second=10, console=console) as live:
             # Debug info for troubleshooting
             debug_mode = False  # Set to True to see raw response chunks
-            
+
+            current_role = ""            
             for chunk in response.iter_lines(decode_unicode=True):
                 if stop_streaming:
                     break
@@ -145,7 +151,14 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
                     role = data.get('role', '')
                     content = data.get('content', '')
                     msg_type = data.get('type', '')
+
+                    # Detect role switch from assistant to tool_call
+                    if current_role == 'assistant' and role == 'tool_call':
+                        assistant_message += "\n\n"  # Add newline when switching away from assistant
                     
+                    # Update current role
+                    current_role = role
+
                     if role == 'assistant':
                         if msg_type == 'chunk':
                             assistant_message += content
@@ -158,14 +171,16 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
                             if assistant_message:  # Only add if we got content
                                 final_content = Markdown(assistant_message + "\n")
                                     
-                                live.update(Padding(final_content, (0, 0, 0, 4)))
+                                # live.update(Panel(Padding(final_content, (0, 0, 0, 4)), title="Agent", border_style="violet", box=box.ROUNDED))
+                                live.update(Padding(Panel(final_content, title="Agent", border_style="violet", box=box.ROUNDED), (0, 4, 0, 4)))
                                 full_response.append({"role": "assistant", "content": assistant_message})
                                 conversation_history.append({"role": "assistant", "content": assistant_message})
                             
                     elif role == 'tool_call':
                         # Tool call result
                         formatted_result = format_tool_result(content)
-                        live.update(Padding(formatted_result, (0, 0, 0, 4)))
+                        assistant_message += formatted_result + "\n\n"
+                        live.update(Padding(assistant_message, (0, 0, 0, 4)))
                         full_response.append({"role": "tool", "content": content})
                         conversation_history.append({"role": "user", "content": content})
                 
@@ -240,34 +255,6 @@ def display_conversation_history():
                 console.print(Markdown(blocks))
         elif role == "system":
             console.print(Panel(content, title="System", border_style="yellow", box=box.ROUNDED))
-
-
-# def display_conversation_history():
-#     """Display the current conversation history"""
-#     for message in conversation_history:
-#         role = message.get("role", "")
-#         content = message.get("content", "")
-        
-#         if role == "user":
-#             console.print(Panel(content, title="User", border_style="green", box=box.ROUNDED))
-#         elif role == "assistant":
-#             # First print a panel with the role header
-#             console.print(Panel("", title="Assistant", border_style="blue", box=box.ROUNDED))
-            
-#             # Then process and display blocks with proper indentation
-#             blocks = format_code_blocks(content)
-#             if isinstance(blocks, list):
-#                 for block in blocks:
-#                     if isinstance(block, str):
-#                         # Add indentation for text blocks
-#                         console.print("    " + Markdown(block))
-#                     else:
-#                         # For code blocks, print with indentation
-#                         console.print("    ", block)
-#             else:
-#                 console.print("    " + Markdown(blocks))
-#         elif role == "system":
-#             console.print(Panel(content, title="System", border_style="yellow", box=box.ROUNDED))
 
 def print_help():
     """Display help information"""
@@ -431,7 +418,7 @@ def main():
             
             # Display user message in a panel
             console.print("")
-            console.print(Panel(user_input, title="User", border_style="green", box=box.ROUNDED))
+            console.print(Padding(Panel(user_input, title="User", border_style="green", box=box.ROUNDED), (0, 4, 0, 4)))
             console.print("")
             
             # Process the response
