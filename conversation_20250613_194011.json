@@ -1,0 +1,18 @@
+[
+  {
+    "role": "user",
+    "content": "Hello!"
+  },
+  {
+    "role": "user",
+    "content": "Tool result: ```/Users/jvroig/Dev/qwen-agentic-server```"
+  },
+  {
+    "role": "user",
+    "content": "Hello.\nMy name is JV\nI am with Bearnie\nAnd\nI would like\nto pay you Tuesday\nfor a hamburger today"
+  },
+  {
+    "role": "user",
+    "content": "Tool result: ```File written successfully: /Users/jvroig/Dev/qwen-agentic-server/JV_request.txt```"
+  }
+]

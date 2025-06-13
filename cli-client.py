@@ -5,6 +5,7 @@ import sys
 import signal
 import threading
 import argparse
+import select
 from datetime import datetime
 from rich.console import Console
 from rich.markdown import Markdown
@@ -301,12 +302,99 @@ def display_conversation_history():
         elif role == "system":
             console.print(Panel(content, title="System", border_style="yellow", box=box.ROUNDED))
 
+def has_pending_input():
+    """Check if there's input waiting in the buffer (indicates paste)"""
+    try:
+        if sys.stdin.isatty():
+            # Unix/Linux/Mac - use select to check for pending input
+            return select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], [])
+    except (OSError, AttributeError):
+        # Windows or other systems where select doesn't work on stdin
+        pass
+    return False
+
+def handle_paste_input(first_line):
+    """Handle detected paste input by collecting all buffered lines"""
+    lines = [first_line]
+    
+    # Collect all remaining lines in buffer
+    while has_pending_input():
+        try:
+            line = input("│ ")
+            lines.append(line)
+        except EOFError:
+            break
+        except Exception:
+            break  # Safety break for any unexpected errors
+    
+    content = "\n".join(lines)
+    console.print(f"[green]📋 Auto-detected multi-line paste ({len(lines)} lines)[/green]")
+    return content
+
+def intelligent_input_handler():
+    """Main input handler that auto-detects paste vs normal typing"""
+    try:
+        # Get first line with our custom prompt
+        first_line = input("│ ")
+        
+        # AUTO-DETECTION: Check for pasted content
+        if has_pending_input():
+            return handle_paste_input(first_line)
+        
+        # SINGLE LINE: Normal typed input
+        return first_line
+        
+    except EOFError:
+        # Handle Ctrl+D in single-line mode
+        console.print("\n[yellow]Input cancelled[/yellow]")
+        return None
+    except KeyboardInterrupt:
+        # Handle Ctrl+C
+        console.print("\n[yellow]Input cancelled[/yellow]")
+        return None
+
+def get_multiline_input(prompt_text="[bold green]You[/bold green]"):
+    """
+    Get multi-line input from user. 
+    User can type multiple lines and end with 'END' on its own line,
+    or use Ctrl+D (EOF) to finish input.
+    """
+    console.print(f"\n{prompt_text}")
+    console.print("[dim]Multi-line mode: Type your message. When done, type 'END' on a new line or press Ctrl+D[/dim]")
+    
+    lines = []
+    try:
+        while True:
+            try:
+                line = input("│ ")
+                if line.strip() == "END":
+                    break
+                lines.append(line)
+            except EOFError:
+                # Ctrl+D pressed
+                break
+    except KeyboardInterrupt:
+        # Ctrl+C pressed
+        console.print("\n[yellow]Input cancelled[/yellow]")
+        return None
+    
+    # Join all lines with newlines
+    user_input = "\n".join(lines).strip()
+    
+    # If empty input, return None
+    if not user_input:
+        console.print("[yellow]Empty input received[/yellow]")
+        return None
+    
+    return user_input
+
 def print_help():
     """Display help information"""
     help_text = """
     [bold]Commands:[/bold]
     /help          - Show this help message
     /quit or /exit - Exit the program
+    /multiline     - Switch to multi-line input for next message
     /debug         - Print contents of the conversation history variable for debugging
     /save [file]   - Save conversation to a file (default: conversation_timestamp.json)
     /load [file]   - Load conversation from a file
@@ -315,8 +403,18 @@ def print_help():
     /temp [value]  - Set temperature (0.0-1.0)
     /tokens [n]    - Set max tokens
     
+    [bold]Input Modes:[/bold]
+    • Default: Type and press Enter (single-line)
+    • Auto-paste: Multi-line content automatically detected 📋
+    • /multiline: Explicit multi-line mode (end with 'END' or Ctrl+D)
+    
+    [bold]Smart Features:[/bold]
+    📋 Paste detection - Multi-line content handled automatically
+    🔄 Mode switching - /multiline for complex inputs
+    
     [bold]Hotkeys:[/bold]
-    Ctrl+C         - Stop current response
+    Ctrl+C         - Stop current response or cancel input
+    Ctrl+D         - Finish multi-line input (in multi-line mode)
     """
     console.print(Panel(help_text, title="Help", border_style="blue"))
 
@@ -404,7 +502,15 @@ def main():
     # Main interaction loop
     while True:
         try:
-            user_input = Prompt.ask("\n[bold green]You[/bold green]")
+            # Start with prompt to show we're ready for input
+            console.print("\n[bold green]You[/bold green]")
+            
+            # Use intelligent input handler that auto-detects paste
+            user_input = intelligent_input_handler()
+            
+            # Handle cancelled input
+            if user_input is None:
+                continue
             
             # Process commands
             if user_input.startswith("/"):
@@ -413,26 +519,37 @@ def main():
                 
                 if cmd in ["/quit", "/exit"]:
                     break
-                # Add this to your command processing section
+                elif cmd == "/multiline":
+                    console.print("[green]Switching to multi-line input mode for next message[/green]")
+                    user_input = get_multiline_input()
+                    if user_input is None:  # Handle cancellation
+                        continue
+                    # Fall through to normal message processing (don't continue)
                 elif cmd == "/debug":
                     console.print("[bold]Current conversation history:[/bold]")
                     for i, msg in enumerate(conversation_history):
                         console.print(f"[{i}] Role: {msg.get('role', 'unknown')}, Content: {msg.get('content', '')[:50]}...")
+                    continue
                 elif cmd == "/help":
                     print_help()
+                    continue
                 elif cmd == "/save":
                     filename = cmd_parts[1] if len(cmd_parts) > 1 else None
                     save_conversation(filename)
+                    continue
                 elif cmd == "/load":
                     if len(cmd_parts) > 1:
                         load_conversation(cmd_parts[1])
                     else:
                         console.print("[red]Error: Please specify a file to load[/red]")
+                    continue
                 elif cmd == "/history":
                     display_conversation_history()
+                    continue
                 elif cmd == "/clear":
                     conversation_history = []
                     console.print("[green]Conversation history cleared[/green]")
+                    continue
                 elif cmd == "/temp":
                     if len(cmd_parts) > 1:
                         try:
@@ -445,6 +562,7 @@ def main():
                             console.print("[red]Invalid temperature value[/red]")
                     else:
                         console.print(f"[green]Current temperature: {temperature}[/green]")
+                    continue
                 elif cmd == "/tokens":
                     if len(cmd_parts) > 1:
                         try:
@@ -454,9 +572,10 @@ def main():
                             console.print("[red]Invalid max tokens value[/red]")
                     else:
                         console.print(f"[green]Current max tokens: {max_tokens}[/green]")
+                    continue
                 else:
                     console.print("[red]Unknown command. Type /help for available commands.[/red]")
-                continue
+                    continue
             
             # Add user message to history
             conversation_history.append({"role": "user", "content": user_input})
