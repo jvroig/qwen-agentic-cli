@@ -23,6 +23,7 @@ stop_streaming = False
 console = Console()
 conversation_history = []
 max_result_len = 300 #Limits formatted display length only, not actual content stored in context
+multiline_mode = False  # Track persistent multi-line mode
 
 #FIXME: DELETE ME
 # def signal_handler(sig, frame):
@@ -395,6 +396,8 @@ def print_help():
     /help          - Show this help message
     /quit or /exit - Exit the program
     /multiline     - Switch to multi-line input for next message
+    /m             - Shortcut for /multiline
+    /multiline toggle or /m toggle - Toggle persistent multi-line mode
     /debug         - Print contents of the conversation history variable for debugging
     /save [file]   - Save conversation to a file (default: conversation_timestamp.json)
     /load [file]   - Load conversation from a file
@@ -406,11 +409,13 @@ def print_help():
     [bold]Input Modes:[/bold]
     • Default: Type and press Enter (single-line)
     • Auto-paste: Multi-line content automatically detected 📋
-    • /multiline: Explicit multi-line mode (end with 'END' or Ctrl+D)
+    • /multiline or /m: One-time multi-line mode (end with 'END' or Ctrl+D)
+    • /multiline toggle or /m toggle: Persistent multi-line mode
     
     [bold]Smart Features:[/bold]
     📋 Paste detection - Multi-line content handled automatically
-    🔄 Mode switching - /multiline for complex inputs
+    🔄 Mode switching - /m for quick multi-line access
+    🔒 Persistent mode - /m toggle to stay in multi-line mode
     
     [bold]Hotkeys:[/bold]
     Ctrl+C         - Stop current response or cancel input
@@ -473,6 +478,7 @@ def main():
 
 [bold yellow]Commands:[/bold yellow]
 - [bold]/help[/bold]           - Show detailed help
+- [bold]/m[/bold] or [bold]/multiline[/bold] - Multi-line input (one-time or toggle)
 - [bold]/quit[/bold] or [bold]/exit[/bold]  - Exit the program
 - [bold]/save \[file][/bold]    - Save conversation
 - [bold]/load \[file][/bold]    - Load conversation
@@ -485,7 +491,7 @@ def main():
 [bold yellow]Hotkeys:[/bold yellow]
 - [bold]Ctrl+C[/bold] - Stop current response generation
 
-[dim]Ready to chat! Type your message or use commands above.[/dim]"""
+[dim]Ready to chat! Use /m for multi-line input, /m toggle for persistent mode.[/dim]"""
 
     console.print(Panel(
         welcome_text,
@@ -497,16 +503,19 @@ def main():
     if args.load:
         load_conversation(args.load)
     
-    global conversation_history
+    global conversation_history, multiline_mode
 
     # Main interaction loop
     while True:
         try:
-            # Start with prompt to show we're ready for input
-            console.print("\n[bold green]You[/bold green]")
-            
-            # Use intelligent input handler that auto-detects paste
-            user_input = intelligent_input_handler()
+            # Show current mode in prompt
+            if multiline_mode:
+                console.print("\n[bold green]You[/bold green] [dim](multi-line mode)[/dim]")
+                user_input = get_multiline_input()
+            else:
+                console.print("\n[bold green]You[/bold green]")
+                # Use intelligent input handler that auto-detects paste
+                user_input = intelligent_input_handler()
             
             # Handle cancelled input
             if user_input is None:
@@ -519,12 +528,22 @@ def main():
                 
                 if cmd in ["/quit", "/exit"]:
                     break
-                elif cmd == "/multiline":
-                    console.print("[green]Switching to multi-line input mode for next message[/green]")
-                    user_input = get_multiline_input()
-                    if user_input is None:  # Handle cancellation
+                elif cmd in ["/multiline", "/m"]:
+                    # Check for toggle sub-command
+                    if len(cmd_parts) > 1 and cmd_parts[1].lower() == "toggle":
+                        multiline_mode = not multiline_mode
+                        status = "enabled" if multiline_mode else "disabled"
+                        mode_indicator = " [dim](all inputs will be multi-line)[/dim]" if multiline_mode else ""
+                        console.print(f"[green]Multi-line mode {status}{mode_indicator}[/green]")
                         continue
-                    # Fall through to normal message processing (don't continue)
+                    else:
+                        # One-time multi-line input (original behavior)
+                        if not multiline_mode:  # Only show message if not already in multi-line mode
+                            console.print("[green]Switching to multi-line input mode for next message[/green]")
+                        user_input = get_multiline_input()
+                        if user_input is None:  # Handle cancellation
+                            continue
+                        # Fall through to normal message processing (don't continue)
                 elif cmd == "/debug":
                     console.print("[bold]Current conversation history:[/bold]")
                     for i, msg in enumerate(conversation_history):
