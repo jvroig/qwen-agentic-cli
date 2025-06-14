@@ -2,6 +2,7 @@
 import json
 import requests
 import sys
+import os
 import signal
 import threading
 import argparse
@@ -314,12 +315,25 @@ def handle_paste_input(first_line):
     # Collect all remaining lines in buffer
     while has_pending_input():
         try:
-            line = input("│ ")
+            line = input()
             lines.append(line)
         except EOFError:
             break
         except Exception:
             break  # Safety break for any unexpected errors
+    
+    # Check for any remaining partial line without newline
+    try:
+        # Read remaining bytes that don't end with newline
+        remaining = os.read(sys.stdin.fileno(), 4096)
+        if remaining:
+            # Decode and add the partial line
+            partial_line = remaining.decode('utf-8', errors='replace').rstrip('\n')
+            if partial_line:  # Only add if there's actual content
+                lines.append(partial_line)
+    except (OSError, BlockingIOError):
+        # If os.read() would block or fails, just continue
+        pass
     
     content = "\n".join(lines)
     console.print(f"[green]📋 Auto-detected multi-line paste ({len(lines)} lines)[/green]")
