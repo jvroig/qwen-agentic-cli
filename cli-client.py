@@ -111,7 +111,7 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
     
     try:
         assistant_message = ""
-        full_response = []
+#        full_response = []
         current_role = ""
         current_live = None
         
@@ -155,6 +155,8 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
                     box=box.ROUNDED
                 )
                 live.update(Padding(final_panel, (0, 4, 0, 4)))
+            conversation_history.append({"role": "assistant", "content": message})
+
             live.stop()
         
         def finalize_tool_live(live, content):
@@ -221,7 +223,7 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
                         current_live = None  # Will be reset on next role transition
                         
                         # Store in conversation history
-                        full_response.append({"role": "tool", "content": content})
+ #                       full_response.append({"role": "tool", "content": content})
                         conversation_history.append({"role": "user", "content": content})
 
                 except json.JSONDecodeError as e:
@@ -239,7 +241,8 @@ def process_streaming_response(url, messages, temperature=0.4, max_tokens=8000):
 
         
         # If we got no response at all
-        if not assistant_message and not full_response:
+#        if not assistant_message and not full_response:
+        if not assistant_message:
             console.print("[yellow]No response received from the server. You might need to check API connectivity or server logs.[/yellow]")
             # Add a debug option for investigating response format
             console.print("[dim]Try setting debug_mode=True in the script to see raw response data.[/dim]")
@@ -288,18 +291,8 @@ def display_conversation_history():
         if role == "user":
             console.print(Panel(content, title="User", border_style="green", box=box.ROUNDED))
         elif role == "assistant":
-            # Process code blocks the same way as in live display
-            blocks = format_code_blocks(content)
-            if isinstance(blocks, list):
-                # Create a group of rendered blocks
-                for block in blocks:
-                    if isinstance(block, str):
-                        console.print(Markdown(block))
-                    else:
-                        # This is a Syntax object (code block)
-                        console.print(block)
-            else:
-                console.print(Markdown(blocks))
+            final_content = Markdown(content)
+            console.print(Panel(final_content, title="Assistant", border_style="violet", box=box.ROUNDED))
         elif role == "system":
             console.print(Panel(content, title="System", border_style="yellow", box=box.ROUNDED))
 
