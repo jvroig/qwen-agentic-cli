@@ -2,12 +2,11 @@
 
 # Check if URL argument is provided
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 <url>"
-    echo "Example: $0 http://localhost:5002/api/chat"
-    exit 1
-fi
+  URL="http://localhost:5002/api/chat"
+else
+  URL="$1"
 
-URL="$1"
+fi
 
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
